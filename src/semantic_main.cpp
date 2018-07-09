@@ -10,6 +10,7 @@ int main(int, char**)
         return -1;
 
     cv::Mat frame;
+    cv::namedWindow("colorFrame",1);
     cv::Mat grayFrame;
     cv::namedWindow("grayFrame",1);
 #ifndef CAP_REF_IMAGE
@@ -42,6 +43,7 @@ int main(int, char**)
         diffImageFactor = cv::sum(diffFrame)[0]/((double)diffFrame.rows*(double)diffFrame.cols*255.0);
         lambda = diffImageFactor*lambdaMax;
         printf("diffImageFactor = %f; lambda = %f\n",diffImageFactor,lambda);
+        cv::imshow("colorFrame", frame);
         cv::imshow("blurredFrame", blurredFrame);
         cv::imshow("grayFrame",grayFrame);
         cv::imshow("refFrame",blurredRefFrame);

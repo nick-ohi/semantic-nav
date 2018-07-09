@@ -5,5 +5,9 @@ add_definitions("-std=gnu++11")
 find_package(OpenCV REQUIRED)
 
 add_executable(semantic_main src/semantic_main.cpp)
+add_executable(watershed_test src/watershed_test.cpp)
+add_executable(histogram_test src/histogram_test.cpp)
 
 target_link_libraries(semantic_main ${OpenCV_LIBS})
+target_link_libraries(watershed_test ${OpenCV_LIBS})
+target_link_libraries(histogram_test ${OpenCV_LIBS})
