@@ -1,6 +1,7 @@
 #include "opencv2/opencv.hpp"
 #include <stdio.h>
 #include <vector>
+#include <string>
 
 #define NUM_COLORS 5
 
@@ -61,6 +62,8 @@ int main(int, char**)
     std::vector<cv::Vec4i> hierarchy;
     std::vector<std::vector<cv::Point>> perColorContours;
     std::vector<cv::Vec4i> perColorHierarchy;
+    std::vector<cv::Moments> moments;
+    std::vector<cv::Point2f> massCenters;
     cap >> frame; // get an initial frame from camera to get size info
     std::vector<cv::Mat> fillFrames;
     fillFrames.resize(NUM_COLORS);
@@ -86,7 +89,7 @@ int main(int, char**)
                         cv::Scalar(hsvUpperThresholds[5][0],hsvUpperThresholds[5][1],hsvUpperThresholds[5][2]),binaryMask2);
                 cv::add(binaryMask,binaryMask2,binaryMask);
             }
-            cv::medianBlur(binaryMask,binaryMask,3);
+            cv::medianBlur(binaryMask,binaryMask,5);
             fillFrames.at(i).copyTo(segmentedFrame,binaryMask);
             /*perColorKeypoints.clear();
             detector->detect(binaryMask,perColorKeypoints);
@@ -103,9 +106,15 @@ int main(int, char**)
             }
         }
         //cv::drawKeypoints(frame,keypoints,frame,cv::Scalar(0,0,255),cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+        moments.resize(contours.size());
+        massCenters.resize(contours.size());
         for(int k=0; k<contours.size(); k++)
         {
+            moments.at(k) = cv::moments(contours.at(k),false);
+            massCenters.at(k) = cv::Point2f(moments.at(k).m10/moments.at(k).m00, moments.at(k).m01/moments.at(k).m00);
             cv::drawContours(frame,contours,k,cv::Scalar(0,0,255),2,8);
+            cv::circle(frame,massCenters.at(k),4,cv::Scalar(0,255,0),-1,8,0);
+            //cv::putText(frame,std::to_string(massCenters.at(k).x)+","+std::to_string(massCenters.at(k).y),massCenters.at(k),cv::FONT_HERSHEY_PLAIN,1,cv::Scalar(0,255,0));
         }
         cv::imshow("frame", frame);
         //cv::imshow("binaryMaskFrame",binaryMask);
