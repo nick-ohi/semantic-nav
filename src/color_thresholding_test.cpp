@@ -27,7 +27,6 @@ int main(int, char**)
                                             {131,20,80}, // purple
                                             {160,50,40} // upper red
                                             };
-        ;
     unsigned int hsvUpperThresholds[6][3] = { // HSV
                                             {10,255,255}, // red
                                             {32,255,255}, // yellow
