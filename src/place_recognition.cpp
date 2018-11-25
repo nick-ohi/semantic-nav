@@ -4,11 +4,12 @@
 #include <vector>
 #include <limits>
 #include <math.h>
+#include <unistd.h>
 
 #define PI 3.141592653589793
 
-//#define FEATURE_COLOR_HIST
-#define FEATURE_SUPERPIXEL_SEMANTIC
+#define FEATURE_COLOR_HIST
+//#define FEATURE_SUPERPIXEL_SEMANTIC
 
 #ifdef FEATURE_COLOR_HIST
 typedef cv::Mat FEATURE_T; // cv::Mat used for histograms
@@ -19,7 +20,7 @@ typedef double FEATURE_DISTANCE_T; // double used for distance between histogram
 struct FEATURE_T
 {
     std::vector<unsigned int> superpixelColors; // 0 = red, 1 = orange, 2 = yellow, 3 = green, 4 = blue, 5 = purple
-    std::vector<cv::Point2f> superpixelCenters;
+    std::vector<cv::Point2d> superpixelCenters;
 };
 typedef double FEATURE_DISTANCE_T; // double used for distance between histograms
 #endif // FEATURE_SUPERPIXEL_SEMANTIC
@@ -34,22 +35,24 @@ int main( int argc, char** argv )
     // Initialize variables
     std::vector<std::vector<cv::Mat>> refImgs;
     std::vector<std::vector<FEATURE_T>> refImageData; // First index: class label; second index: feature number
-    cv::Mat testImg;
-    FEATURE_T testImgFeatures;
+    std::vector<cv::Mat> testImgs;
+    std::vector<FEATURE_T> testImageData;
     std::vector<cv::String> refFilenames;
     std::vector<cv::String> refFolderpaths;
-    std::vector<FEATURE_DISTANCE_T> minDistance;
-    std::vector<double> posteriorProbs;
-    std::vector<double> priorProbs;
-    refFolderpaths.push_back("../images/Evansdale/place0");
-    refFolderpaths.push_back("../images/Evansdale/place1");
-    refFolderpaths.push_back("../images/Evansdale/place2");
+    std::vector<cv::String> testFilenames;
+    cv::String testFolderpath = "../images/Evansdale_small/test";
+    unsigned int testImageTruthClass[18] = {0,0,0,0,0,1,1,1,1,1,2,2,2,2,2,2,2,2};
+    std::vector<unsigned int> testImageEstimatedClassCorrect;
+    std::vector<std::vector<FEATURE_DISTANCE_T>> minDistance;
+    std::vector<std::vector<double>> posteriorProbs;
+    std::vector<std::vector<double>> priorProbs;
+    refFolderpaths.push_back("../images/Evansdale_small/place0");
+    refFolderpaths.push_back("../images/Evansdale_small/place1");
+    refFolderpaths.push_back("../images/Evansdale_small/place2");
     cv::String testImageFilepath = cv::String(argv[1]);
     const unsigned int numClasses = refFolderpaths.size();
     refImgs.resize(numClasses);
     refImageData.resize(numClasses);
-    posteriorProbs.resize(numClasses);
-    priorProbs.resize(numClasses, 1.0/(float)numClasses); // *** Uniform priors, for now
 
     // Load reference images and extract and record features
     for(unsigned int i=0; i<numClasses; i++)
@@ -61,41 +64,103 @@ int main( int argc, char** argv )
             img = cv::imread(refFilenames.at(j));
             refImageData.at(i).push_back(extractFeatures(img));
             refImgs.at(i).push_back(img);
+            //usleep(500000);
+            /*for(unsigned int k=0; k<refImageData.at(i).at(j).superpixelColors.size(); k++)
+            {
+                printf("refImage %u class %u superpixel %u colors = %u\n",j,i,k,refImageData.at(i).at(j).superpixelColors.at(k));
+            }*/
         }
     }
 
-    // Load test image and extract features
-    testImg = cv::imread(testImageFilepath);
-    testImgFeatures = extractFeatures(testImg);
-
-    // Compute distance between features in test image and all reference images and record minimum distance for each class
-    minDistance.resize(numClasses);
-    for(unsigned int i=0; i<numClasses; i++)
+    // Load test images and extract features
+    cv::glob(testFolderpath, testFilenames);
+    for(unsigned int j=0; j<testFilenames.size(); j++)
     {
-        minDistance.at(i) = std::numeric_limits<FEATURE_DISTANCE_T>::infinity();
-        for(unsigned int j=0; j<refImageData.at(i).size(); j++)
+        cv::Mat img;
+        img = cv::imread(testFilenames.at(j));
+        testImageData.push_back(extractFeatures(img));
+        testImgs.push_back(img);
+        //usleep(500000);
+        /*printf("testImage %u: ",j);
+        for(unsigned int k=0; k<testImageData.at(j).superpixelColors.size(); k++)
         {
-            FEATURE_DISTANCE_T candidateDistance = computeFeatureDistance(testImgFeatures, refImageData.at(i).at(j));
-            if(candidateDistance < minDistance.at(i))
+            printf("%u ",testImageData.at(j).superpixelColors.at(k)); // color
+            //printf("[%.2f,%.2f] ",testImageData.at(j).superpixelCenters.at(k).x,testImageData.at(j).superpixelCenters.at(k).y);
+        }
+        printf("\n");*/
+    }
+
+    // Compute distance between features in test images and all reference images and record minimum distance for each class
+    minDistance.resize(testImageData.size());
+    for(unsigned int a=0; a<minDistance.size(); a++)
+    {
+        minDistance.at(a).resize(numClasses);
+    }
+    for(unsigned int k=0; k<testImageData.size(); k++)
+    {
+        for(unsigned int i=0; i<numClasses; i++)
+        {
+            minDistance.at(k).at(i) = std::numeric_limits<FEATURE_DISTANCE_T>::infinity();
+            for(unsigned int j=0; j<refImageData.at(i).size(); j++)
             {
-                minDistance.at(i) = candidateDistance;
+                FEATURE_DISTANCE_T candidateDistance = computeFeatureDistance(testImageData.at(k), refImageData.at(i).at(j));
+                if(candidateDistance < minDistance.at(k).at(i))
+                {
+                    minDistance.at(k).at(i) = candidateDistance;
+                }
             }
         }
     }
 
     // Compute probabilities for each class, based on the minimum feature distance found between the test image and each class
-    for(unsigned int i=0; i<numClasses; i++)
+    posteriorProbs.resize(testImageData.size(),std::vector<double>(numClasses));
+    priorProbs.resize(testImageData.size(), std::vector<double>(numClasses, 1.0/(float)numClasses)); // *** Uniform priors, for now
+    for(unsigned int k=0; k<testImageData.size(); k++)
     {
-        posteriorProbs.at(i) = computeConditionalProb(minDistance.at(i))*priorProbs.at(i);
-        printf("place %u prob = %lf\n",i,posteriorProbs.at(i));
+        //printf("image %u, ",k);
+        for(unsigned int i=0; i<numClasses; i++)
+        {
+            //printf("minDistance(%u)(%u) = %lf\n",k,i,minDistance.at(k).at(i));
+            posteriorProbs.at(k).at(i) = computeConditionalProb(minDistance.at(k).at(i))*priorProbs.at(k).at(i);
+            //printf("place %u prob = %lf\t",i,posteriorProbs.at(k).at(i));
+        }
+        //printf("\n");
     }
+
+    // List MAP estimated results and success rate
+    testImageEstimatedClassCorrect.resize(testImageData.size());
+    double successRate = 0.0;
+    for(unsigned int k=0; k<testImageData.size(); k++)
+    {
+        double maxProb = 0.0;
+        unsigned int estimatedPlace = 0;
+        for(unsigned int i=0; i<numClasses; i++)
+        {
+            if(posteriorProbs.at(k).at(i) > maxProb)
+            {
+                maxProb = posteriorProbs.at(k).at(i);
+                estimatedPlace = i;
+            }
+        }
+        if(estimatedPlace == testImageTruthClass[k])
+        {
+            testImageEstimatedClassCorrect.at(k) = 1;
+        }
+        else
+        {
+            testImageEstimatedClassCorrect.at(k) = 0;
+        }
+        successRate += (double)testImageEstimatedClassCorrect.at(k);
+        printf("image %u is: place %u, with prob %lf, correct = %u\n",k,estimatedPlace,maxProb,testImageEstimatedClassCorrect.at(k));
+    }
+    successRate /= (double)testImageData.size();
+    printf("success rate = %lf\n",successRate);
 
     //ShowManyImages(cv::String("Place 0"), 4, refImgs.at(0).at(0), refImgs.at(0).at(1), refImgs.at(0).at(2), refImgs.at(0).at(3));
     //ShowManyImages(cv::String("Place 1"), 4, refImgs.at(1).at(0), refImgs.at(1).at(1), refImgs.at(1).at(2), refImgs.at(1).at(3));
     //cv::namedWindow("Test Image",cv::WINDOW_NORMAL);
     //cv::resizeWindow("Test Image", 800, 600);
-    cv::imshow("Test Image", testImg);
-    cv::waitKey();
+    //cv::imshow("Test Image", testImg);
     cv::destroyAllWindows();
     return 0;
 }
@@ -145,6 +210,11 @@ FEATURE_T extractFeatures(cv::Mat imgIn)
     result = imgIn;
     // Retrieve the segmentation result
     seeds->getLabels(labels);
+    // Print output
+    /*seeds->getLabelContourMask(mask, false);
+    result.setTo(cv::Scalar(0, 0, 255), mask);
+    cv::imshow("test",result);
+    cv::waitKey(500);*/
     // Find superpixel centers and overall color
     unsigned int numSuperpixelsActual = seeds->getNumberOfSuperpixels();
     cv::Moments superpixelMoment;
@@ -179,6 +249,7 @@ FEATURE_T extractFeatures(cv::Mat imgIn)
         imageFeatures.superpixelCenters.at(i) = superpixelCenter;
         imageFeatures.superpixelColors.at(i) = maxColorIndex;
     }
+    return imageFeatures;
 #endif // FEATURE_SUPERPIXEL_SEMANTIC
 }
 
@@ -190,109 +261,82 @@ FEATURE_DISTANCE_T computeFeatureDistance(FEATURE_T testFeatures, FEATURE_T refF
 #endif // FEATURE_COLOR_HIST
 
 #ifdef FEATURE_SUPERPIXEL_SEMANTIC
+    auto findRelativePositionType = [](cv::Point2d testPos, cv::Point2d basePos) -> unsigned int // 0 = same,same; 1 = left,same; 2 = left,up; 3 = same,up; 4 = right,up; 5 = right,same; 6 = right,down; 7 = same,down; 8 = left,down
+    {
+        if(testPos.x == basePos.x && testPos.y == basePos.y) // 0 = same,same
+        {
+            return 0;
+        }
+        else if(testPos.x < basePos.x && testPos.y == basePos.y) // 1 = left,same
+        {
+            return 1;
+        }
+        else if(testPos.x < basePos.x && testPos.y < basePos.y) // 2 = left,up
+        {
+            return 2;
+        }
+        else if(testPos.x == basePos.x && testPos.y < basePos.y) // 3 = same,up
+        {
+            return 3;
+        }
+        else if(testPos.x > basePos.x && testPos.y < basePos.y) // 4 = right,up
+        {
+            return 4;
+        }
+        else if(testPos.x > basePos.x && testPos.y == basePos.y) // 5 = right,same
+        {
+            return 5;
+        }
+        else if(testPos.x > basePos.x && testPos.y > basePos.y) // 6 = right,down
+        {
+            return 6;
+        }
+        else if(testPos.x == basePos.x && testPos.y > basePos.y) // 7 = same,down
+        {
+            return 7;
+        }
+        else if(testPos.x < basePos.x && testPos.y > basePos.y) // 8 = left,down
+        {
+            return 8;
+        }
+        else // Failsafe
+        {
+            return 0;
+        }
+    };
+    const unsigned int numColors = 6;
+    const unsigned int numRelPositions = 9;
     unsigned int numSuperpixels = refFeatures.superpixelColors.size();
-    std::vector<double> refSideToSideDir(numSuperpixels);
-    std::vector<double> refUpDownDir(numSuperpixels);
-    std::vector<double> testSideToSideDir(numSuperpixels);
-    std::vector<double> testUpDownDir(numSuperpixels);
     unsigned int bestBaseSuperpixelIndex = 0;
     double bestBaseSuperpixelDistance = std::numeric_limits<double>::infinity();
     double candidateDistance;
+    unsigned int refSemanticHistogram[numColors][numRelPositions] = {0}; // colors, relative positions
+    // Ref image features
     for(unsigned int i=0; i<numSuperpixels; i++)
     {
-        if(i==0) // Position of first superpixel, with repsect to itself, is zero
-        {
-            refSideToSideDir.at(i) = 0.0;
-            refUpDownDir.at(i) = 0.0;
-        }
-        else
-        {
-            // Side to side position
-            if(refFeatures.superpixelCenters.at(i).x > refFeatures.superpixelCenters.at(0).x) // To the right
-            {
-                refSideToSideDir.at(i) = 1.0;
-            }
-            else if(refFeatures.superpixelCenters.at(i).x < refFeatures.superpixelCenters.at(0).x) // To the left
-            {
-                refSideToSideDir.at(i) = -1.0;
-            }
-            else // Equal position
-            {
-                refSideToSideDir.at(i) = 0.0;
-            }
-
-            // Up and down position
-            if(refFeatures.superpixelCenters.at(i).y > refFeatures.superpixelCenters.at(0).x) // Below
-            {
-                refUpDownDir.at(i) = 1.0;
-            }
-            else if(refFeatures.superpixelCenters.at(i).x < refFeatures.superpixelCenters.at(0).x) // Above
-            {
-                refUpDownDir.at(i) = -1.0;
-            }
-            else // Equal position
-            {
-                refUpDownDir.at(i) = 0.0;
-            }
-        }
+        refSemanticHistogram[refFeatures.superpixelColors.at(i)]
+                [findRelativePositionType(refFeatures.superpixelCenters.at(i),refFeatures.superpixelCenters.at(0))]++;
     }
+    // Test image features
     for(unsigned int j=0; j<numSuperpixels; j++)
     {
+        unsigned int testSemanticHistogram[numColors][numRelPositions] = {0}; // colors, relative positions
         for(unsigned int i=0; i<numSuperpixels; i++)
         {
-            unsigned int testIndex;
-            if(i+j > numSuperpixels-1)
-            {
-                testIndex = i+j-numSuperpixels;
-            }
-            else
-            {
-                testIndex = i+j;
-            }
-
-            if(i==0) // Position of first superpixel, with repsect to itself, is zero
-            {
-                testSideToSideDir.at(i) = 0.0;
-                testUpDownDir.at(i) = 0.0;
-            }
-            else
-            {
-                // Side to side position
-                if(testFeatures.superpixelCenters.at(testIndex).x > testFeatures.superpixelCenters.at(j).x) // To the right
-                {
-                    testSideToSideDir.at(i) = 1.0;
-                }
-                else if(testFeatures.superpixelCenters.at(testIndex).x < testFeatures.superpixelCenters.at(j).x) // To the left
-                {
-                    testSideToSideDir.at(i) = -1.0;
-                }
-                else // Equal position
-                {
-                    testSideToSideDir.at(i) = 0.0;
-                }
-
-                // Up and down position
-                if(testFeatures.superpixelCenters.at(testIndex).y > testFeatures.superpixelCenters.at(j).x) // Below
-                {
-                    testUpDownDir.at(i) = 1.0;
-                }
-                else if(testFeatures.superpixelCenters.at(testIndex).x < testFeatures.superpixelCenters.at(j).x) // Above
-                {
-                    testUpDownDir.at(i) = -1.0;
-                }
-                else // Equal position
-                {
-                    testUpDownDir.at(i) = 0.0;
-                }
-            }
+            testSemanticHistogram[testFeatures.superpixelColors.at(i)]
+                    [findRelativePositionType(testFeatures.superpixelCenters.at(i),testFeatures.superpixelCenters.at(j))]++;
         }
         double superpixelDistance;
-        if(testFeatures.superpixelColors.at(j) == refFeatures.superpixelColors.at(0))
+        // If the color of the "base base" does not match between the ref and test image, distance is infinite, otherwise compute the distance
+        if(testFeatures.superpixelColors.at(j) == refFeatures.superpixelColors.at(0)) // TODO: reconsider this condition
         {
             superpixelDistance = 0.0;
-            for(unsigned int k=0; k<numSuperpixels; k++)
+            for(unsigned int m=0; m<numColors; m++)
             {
-                superpixelDistance += fabs(testUpDownDir.at(k) - refUpDownDir.at(k)) + fabs(testSideToSideDir.at(k) - refSideToSideDir.at(k));
+                for(unsigned int n=0; n<numRelPositions; n++)
+                {
+                    superpixelDistance += fabs((double)testSemanticHistogram[m][n] - (double)refSemanticHistogram[m][n]);
+                }
             }
         }
         else
@@ -318,7 +362,10 @@ double computeConditionalProb(FEATURE_DISTANCE_T distance)
 #endif // FEATURE_COLOR_HIST
 
 #ifdef FEATURE_SUPERPIXEL_SEMANTIC
-
+    // Gaussian conditional probability distribution
+    //printf("distance = %lf\n",distance);
+    double sigmaSquared = pow(25.0, 2.0);
+    return 1.0/sqrt(2.0*PI*sigmaSquared)*exp(-pow(distance, 2.0)/(2.0*sigmaSquared));
 #endif // FEATURE_SUPERPIXEL_SEMANTIC
 }
 

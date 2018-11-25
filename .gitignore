@@ -1,3 +1,4 @@
 build/
 *.user
 images/
+debugging_terminal_output/
