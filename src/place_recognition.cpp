@@ -1,36 +1,6 @@
-#include "opencv2/opencv.hpp"
-#include <opencv2/ximgproc.hpp>
-#include <stdio.h>
-#include <vector>
-#include <limits>
-#include <math.h>
-#include <unistd.h>
+#include <place_recognition.hpp>
 
-#define PI 3.141592653589793
-
-#define FEATURE_COLOR_HIST
-//#define FEATURE_SUPERPIXEL_SEMANTIC
-
-#ifdef FEATURE_COLOR_HIST
-typedef cv::Mat FEATURE_T; // cv::Mat used for histograms
-typedef double FEATURE_DISTANCE_T; // double used for distance between histograms
-#endif // FEATURE_COLOR_HIST
-
-#ifdef FEATURE_SUPERPIXEL_SEMANTIC
-struct FEATURE_T
-{
-    std::vector<unsigned int> superpixelColors; // 0 = red, 1 = orange, 2 = yellow, 3 = green, 4 = blue, 5 = purple
-    std::vector<cv::Point2d> superpixelCenters;
-};
-typedef double FEATURE_DISTANCE_T; // double used for distance between histograms
-#endif // FEATURE_SUPERPIXEL_SEMANTIC
-
-FEATURE_T extractFeatures(cv::Mat imgIn);
-FEATURE_DISTANCE_T computeFeatureDistance(FEATURE_T testFeatures, FEATURE_T refFeatures);
-double computeConditionalProb(FEATURE_DISTANCE_T distance);
-void ShowManyImages(cv::String title, int nArgs, ...);
-
-int main( int argc, char** argv )
+void PlaceRecognition::run()
 {
     // Initialize variables
     std::vector<std::vector<cv::Mat>> refImgs;
@@ -49,7 +19,6 @@ int main( int argc, char** argv )
     refFolderpaths.push_back("../images/Evansdale_small/place0");
     refFolderpaths.push_back("../images/Evansdale_small/place1");
     refFolderpaths.push_back("../images/Evansdale_small/place2");
-    cv::String testImageFilepath = cv::String(argv[1]);
     const unsigned int numClasses = refFolderpaths.size();
     refImgs.resize(numClasses);
     refImageData.resize(numClasses);
@@ -162,10 +131,9 @@ int main( int argc, char** argv )
     //cv::resizeWindow("Test Image", 800, 600);
     //cv::imshow("Test Image", testImg);
     cv::destroyAllWindows();
-    return 0;
 }
 
-FEATURE_T extractFeatures(cv::Mat imgIn)
+FEATURE_T PlaceRecognition::extractFeatures(cv::Mat imgIn)
 {
 #ifdef FEATURE_COLOR_HIST
     // Hue-Saturation histogram
@@ -253,7 +221,7 @@ FEATURE_T extractFeatures(cv::Mat imgIn)
 #endif // FEATURE_SUPERPIXEL_SEMANTIC
 }
 
-FEATURE_DISTANCE_T computeFeatureDistance(FEATURE_T testFeatures, FEATURE_T refFeatures)
+FEATURE_DISTANCE_T PlaceRecognition::computeFeatureDistance(FEATURE_T testFeatures, FEATURE_T refFeatures)
 {
 #ifdef FEATURE_COLOR_HIST
     // Hue-Saturation histogram
@@ -353,7 +321,7 @@ FEATURE_DISTANCE_T computeFeatureDistance(FEATURE_T testFeatures, FEATURE_T refF
 #endif // FEATURE_SUPERPIXEL_SEMANTIC
 }
 
-double computeConditionalProb(FEATURE_DISTANCE_T distance)
+double PlaceRecognition::computeConditionalProb(FEATURE_DISTANCE_T distance)
 {
 #ifdef FEATURE_COLOR_HIST
     // Gaussian conditional probability distribution
@@ -369,7 +337,7 @@ double computeConditionalProb(FEATURE_DISTANCE_T distance)
 #endif // FEATURE_SUPERPIXEL_SEMANTIC
 }
 
-void ShowManyImages(cv::String title, int nArgs, ...)
+void PlaceRecognition::ShowManyImages(cv::String title, int nArgs, ...)
 {
     using namespace std;
     using namespace cv;
