@@ -12,10 +12,11 @@ void PlaceRecognition::run()
     std::vector<cv::String> testFilenames;
     cv::String testFolderpath = "../images/Evansdale_small/test";
     unsigned int testImageTruthClass[18] = {0,0,0,0,0,1,1,1,1,1,2,2,2,2,2,2,2,2};
-    std::vector<unsigned int> testImageEstimatedClassCorrect;
+    std::vector<std::vector<unsigned int>> testImageEstimatedClassCorrect; // (testImageIndex=k)(priorProbIncrementIndex=j)
     std::vector<std::vector<FEATURE_DISTANCE_T>> minDistance;
-    std::vector<std::vector<double>> posteriorProbs;
-    std::vector<std::vector<double>> priorProbs;
+    std::vector<std::vector<double>> conditionalProbs; // (testImageIndex=k)(classNumber=i)
+    std::vector<std::vector<double>> priorProbs; // (priorProbIncrementIndex=j)(classNumber=i)
+    std::vector<std::vector<std::vector<double>>> posteriorProbs; // (testImageIndex=k)(priorProbIncrementIndex=j)(classNumber=i)
     refFolderpaths.push_back("../images/Evansdale_small/place0");
     refFolderpaths.push_back("../images/Evansdale_small/place1");
     refFolderpaths.push_back("../images/Evansdale_small/place2");
@@ -81,46 +82,78 @@ void PlaceRecognition::run()
         }
     }
 
-    // Compute probabilities for each class, based on the minimum feature distance found between the test image and each class
-    posteriorProbs.resize(testImageData.size(),std::vector<double>(numClasses));
-    priorProbs.resize(testImageData.size(), std::vector<double>(numClasses, 1.0/(float)numClasses)); // *** Uniform priors, for now
+    // Compute conditional probabilities for each class, based on the minimum feature distance found between the test image and each class
+    conditionalProbs.resize(testImageData.size(),std::vector<double>(numClasses));
     for(unsigned int k=0; k<testImageData.size(); k++)
     {
         //printf("image %u, ",k);
         for(unsigned int i=0; i<numClasses; i++)
         {
             //printf("minDistance(%u)(%u) = %lf\n",k,i,minDistance.at(k).at(i));
-            posteriorProbs.at(k).at(i) = computeConditionalProb(minDistance.at(k).at(i))*priorProbs.at(k).at(i);
+            conditionalProbs.at(k).at(i) = computeConditionalProb(minDistance.at(k).at(i));
+            //posteriorProbs.at(k).at(i) = computeConditionalProb(minDistance.at(k).at(i))*priorProbs.at(k).at(i);
             //printf("place %u prob = %lf\t",i,posteriorProbs.at(k).at(i));
         }
         //printf("\n");
     }
 
-    // List MAP estimated results and success rate
-    testImageEstimatedClassCorrect.resize(testImageData.size());
-    double successRate = 0.0;
+    // Generate prior probabilities for plotting ROC curves
+    unsigned int individualPriorNumIncrements = (unsigned int)(1.0/PRIOR_PROB_INCREMENT);
+    unsigned int numPriorTrials = (unsigned int)pow(individualPriorNumIncrements, numClasses-1);
+    priorProbs.resize(numPriorTrials, std::vector<double>(numClasses));
+    for(unsigned int m=0; m<individualPriorNumIncrements; m++)
+    {
+        for(unsigned int n=0; n<individualPriorNumIncrements; n++)
+        {
+            unsigned int trialIndex = m*individualPriorNumIncrements + n;
+            priorProbs.at(trialIndex).at(0) = (double)m*PRIOR_PROB_INCREMENT;
+            priorProbs.at(trialIndex).at(1) = (double)n*PRIOR_PROB_INCREMENT;
+            priorProbs.at(trialIndex).at(2) = 1.0 - priorProbs.at(trialIndex).at(1) - priorProbs.at(trialIndex).at(0);
+        }
+    }
+
+    // Compute posterior probabilities
+    posteriorProbs.resize(testImageData.size(),std::vector<std::vector<double>>(numPriorTrials,std::vector<double>(numClasses,0)));
     for(unsigned int k=0; k<testImageData.size(); k++)
     {
-        double maxProb = 0.0;
-        unsigned int estimatedPlace = 0;
-        for(unsigned int i=0; i<numClasses; i++)
+        for(unsigned int j=0; j<numPriorTrials; j++)
         {
-            if(posteriorProbs.at(k).at(i) > maxProb)
+            for(unsigned int i=0; i<numClasses; i++)
             {
-                maxProb = posteriorProbs.at(k).at(i);
-                estimatedPlace = i;
+                posteriorProbs.at(k).at(j).at(i) = conditionalProbs.at(k).at(i)*priorProbs.at(j).at(i);
             }
         }
-        if(estimatedPlace == testImageTruthClass[k])
+    }
+
+    // List MAP estimated results and success rate
+    testImageEstimatedClassCorrect.resize(testImageData.size(),std::vector<unsigned int>(numPriorTrials,0));
+    double successRate = 0.0;
+    RESULTS_T individualResult;
+    for(unsigned int k=0; k<testImageData.size(); k++)
+    {
+        for(unsigned int j=0; j<numPriorTrials; j++)
         {
-            testImageEstimatedClassCorrect.at(k) = 1;
+            double maxProb = 0.0;
+            unsigned int estimatedPlace = 0;
+            for(unsigned int i=0; i<numClasses; i++)
+            {
+                if(posteriorProbs.at(k).at(j).at(i) > maxProb)
+                {
+                    maxProb = posteriorProbs.at(k).at(j).at(i);
+                    estimatedPlace = i;
+                }
+            }
+            if(estimatedPlace == testImageTruthClass[k])
+            {
+                testImageEstimatedClassCorrect.at(k).at(j) = 1;
+            }
+            else
+            {
+                testImageEstimatedClassCorrect.at(k).at(j) = 0;
+            }
+            successRate += (double)testImageEstimatedClassCorrect.at(k).at(j);
+            printf("image %u is: place %u, with prob %lf, correct = %u\n",k,estimatedPlace,maxProb,testImageEstimatedClassCorrect.at(k).at(j));
         }
-        else
-        {
-            testImageEstimatedClassCorrect.at(k) = 0;
-        }
-        successRate += (double)testImageEstimatedClassCorrect.at(k);
-        printf("image %u is: place %u, with prob %lf, correct = %u\n",k,estimatedPlace,maxProb,testImageEstimatedClassCorrect.at(k));
     }
     successRate /= (double)testImageData.size();
     printf("success rate = %lf\n",successRate);
@@ -130,7 +163,7 @@ void PlaceRecognition::run()
     //cv::namedWindow("Test Image",cv::WINDOW_NORMAL);
     //cv::resizeWindow("Test Image", 800, 600);
     //cv::imshow("Test Image", testImg);
-    cv::destroyAllWindows();
+    //cv::destroyAllWindows();
 }
 
 FEATURE_T PlaceRecognition::extractFeatures(cv::Mat imgIn)

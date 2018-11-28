@@ -8,8 +8,10 @@
 #include <limits>
 #include <math.h>
 #include <unistd.h>
+#include <queue>
 
 #define PI 3.141592653589793
+#define PRIOR_PROB_INCREMENT 0.01
 
 #define FEATURE_COLOR_HIST
 //#define FEATURE_SUPERPIXEL_SEMANTIC
@@ -28,10 +30,24 @@ struct FEATURE_T
 typedef double FEATURE_DISTANCE_T; // double used for distance between histograms
 #endif // FEATURE_SUPERPIXEL_SEMANTIC
 
+struct RESULTS_T
+{
+    unsigned int numPlace0Correct;
+    unsigned int numPlace1Correct;
+    unsigned int numPlace2Correct;
+    unsigned int numPlace0False;
+    unsigned int numPlace1False;
+    unsigned int numPlace2False;
+    double place0Prior;
+    double place1Prior;
+    double place2Prior;
+};
+
 class PlaceRecognition
 {
 public:
     // Members
+    std::queue<RESULTS_T> resultsQueue;
 
     // Methods
     void run();
