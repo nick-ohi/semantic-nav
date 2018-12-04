@@ -1,6 +1,6 @@
 #include <place_recognition.hpp>
 
-void PlaceRecognition::run()
+void PlaceRecognition::run(int argc, char **argv)
 {
     // Initialize variables
     std::vector<std::vector<cv::Mat>> refImgs;
@@ -128,10 +128,13 @@ void PlaceRecognition::run()
     // List MAP estimated results and success rate
     testImageEstimatedClassCorrect.resize(testImageData.size(),std::vector<unsigned int>(numPriorTrials,0));
     double successRate = 0.0;
-    RESULTS_T individualResult;
-    for(unsigned int k=0; k<testImageData.size(); k++)
+    for(unsigned int j=0; j<numPriorTrials; j++)
     {
-        for(unsigned int j=0; j<numPriorTrials; j++)
+        RESULTS_T individualPriorResult;
+        individualPriorResult.place0Prior = priorProbs.at(j).at(0);
+        individualPriorResult.place1Prior = priorProbs.at(j).at(1);
+        individualPriorResult.place2Prior = priorProbs.at(j).at(2);
+        for(unsigned int k=0; k<testImageData.size(); k++)
         {
             double maxProb = 0.0;
             unsigned int estimatedPlace = 0;
@@ -145,18 +148,69 @@ void PlaceRecognition::run()
             }
             if(estimatedPlace == testImageTruthClass[k])
             {
-                testImageEstimatedClassCorrect.at(k).at(j) = 1;
+                if(estimatedPlace==0)
+                {
+                    individualPriorResult.numPlace0Correct++;
+                }
+                else if(estimatedPlace==1)
+                {
+                    individualPriorResult.numPlace1Correct++;
+                }
+                else if(estimatedPlace==2)
+                {
+                    individualPriorResult.numPlace2Correct++;
+                }
+                //testImageEstimatedClassCorrect.at(k).at(j) = 1;
             }
             else
             {
-                testImageEstimatedClassCorrect.at(k).at(j) = 0;
+                if(estimatedPlace==0)
+                {
+                    individualPriorResult.numPlace0False++;
+                }
+                else if(estimatedPlace==1)
+                {
+                    individualPriorResult.numPlace1False++;
+                }
+                else if(estimatedPlace==2)
+                {
+                    individualPriorResult.numPlace2False++;
+                }
+                //testImageEstimatedClassCorrect.at(k).at(j) = 0;
             }
-            successRate += (double)testImageEstimatedClassCorrect.at(k).at(j);
-            printf("image %u is: place %u, with prob %lf, correct = %u\n",k,estimatedPlace,maxProb,testImageEstimatedClassCorrect.at(k).at(j));
+            //successRate += (double)testImageEstimatedClassCorrect.at(k).at(j);
+            //printf("image %u is: place %u, with prob %lf, correct = %u\n",k,estimatedPlace,maxProb,testImageEstimatedClassCorrect.at(k).at(j));
         }
+        resultQueue.push(individualPriorResult);
     }
-    successRate /= (double)testImageData.size();
-    printf("success rate = %lf\n",successRate);
+
+    // Save results to file
+    std::string answerFileName;
+    std::string outputFormatString = "%u,%u,%u,%u,%u,%u,%lf,%lf,%lf\n";
+    if(argc>=2)
+    {
+        answerFileName = argv[1];
+        answerFileName = answerFileName + std::string(".csv");
+    }
+    if(answerFileName.size()<1)
+    {
+        throw std::runtime_error("no file name entered");
+    }
+    FILE *answerFile=fopen(answerFileName.c_str(),"w");
+    while(resultQueue.size())
+    {
+        if(answerFile)
+        {
+            fprintf(answerFile, outputFormatString.c_str(), resultQueue.front().numPlace0Correct, resultQueue.front().numPlace1Correct,
+                    resultQueue.front().numPlace2Correct, resultQueue.front().numPlace0False, resultQueue.front().numPlace1False,
+                    resultQueue.front().numPlace2False, resultQueue.front().place0Prior, resultQueue.front().place1Prior, resultQueue.front().place2Prior);
+        }
+        resultQueue.pop();
+    }
+    fclose(answerFile);
+
+    //successRate /= (double)testImageData.size();
+    //printf("success rate = %lf\n",successRate);
 
     //ShowManyImages(cv::String("Place 0"), 4, refImgs.at(0).at(0), refImgs.at(0).at(1), refImgs.at(0).at(2), refImgs.at(0).at(3));
     //ShowManyImages(cv::String("Place 1"), 4, refImgs.at(1).at(0), refImgs.at(1).at(1), refImgs.at(1).at(2), refImgs.at(1).at(3));
