@@ -14,8 +14,8 @@
 #define PI 3.141592653589793
 #define PRIOR_PROB_INCREMENT 0.01
 
-#define FEATURE_COLOR_HIST
-//#define FEATURE_SUPERPIXEL_SEMANTIC
+//#define FEATURE_COLOR_HIST
+#define FEATURE_SUPERPIXEL_SEMANTIC
 
 #ifdef FEATURE_COLOR_HIST
 typedef cv::Mat FEATURE_T; // cv::Mat used for histograms
@@ -25,10 +25,11 @@ typedef double FEATURE_DISTANCE_T; // double used for distance between histogram
 #ifdef FEATURE_SUPERPIXEL_SEMANTIC
 struct FEATURE_T
 {
-    std::vector<unsigned int> superpixelColors; // 0 = red, 1 = orange, 2 = yellow, 3 = green, 4 = blue, 5 = purple
+    std::vector<unsigned int> superpixelColors; // 0 = red, 1 = orange, 2 = yellow, 3 = green, 4 = blue, 5 = purple, 6 = black, 7 = white
     std::vector<cv::Point2d> superpixelCenters;
 };
 typedef double FEATURE_DISTANCE_T; // double used for distance between histograms
+#define NUM_COLORS 8
 #endif // FEATURE_SUPERPIXEL_SEMANTIC
 
 struct RESULTS_T

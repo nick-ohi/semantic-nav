@@ -51,13 +51,13 @@ void PlaceRecognition::run(int argc, char **argv)
         testImageData.push_back(extractFeatures(img));
         testImgs.push_back(img);
         //usleep(500000);
-        /*printf("testImage %u: ",j);
+        printf("testImage %u: ",j);
         for(unsigned int k=0; k<testImageData.at(j).superpixelColors.size(); k++)
         {
             printf("%u ",testImageData.at(j).superpixelColors.at(k)); // color
             //printf("[%.2f,%.2f] ",testImageData.at(j).superpixelCenters.at(k).x,testImageData.at(j).superpixelCenters.at(k).y);
         }
-        printf("\n");*/
+        printf("\n");
     }
 
     // Compute distance between features in test images and all reference images and record minimum distance for each class
@@ -246,17 +246,21 @@ FEATURE_T PlaceRecognition::extractFeatures(cv::Mat imgIn)
     int num_superpixels = 70; // 400
     int num_levels = 6; // 4
     int num_histogram_bins = 5;
+    unsigned int valueBlackThresh = 40; // 0-255
+    unsigned int saturationWhiteThresh = 25; // 0-255
     cv::Mat result, mask, converted, labels;
     cv::Ptr<cv::ximgproc::SuperpixelSEEDS> seeds;
     int width, height;
     cv::Mat histogram;
     cv::Mat hsvImg;
-    int channels = 0;
-    int histSize = 12; // hue bins
+    int channels[] = {0,1,2};
+    int histSize[] = {12,256,256}; // {hue bins, saturation bins, value bins}
     float hRanges[] = {0,180};
-    const float* ranges[] = {hRanges};
+    float sRanges[] = {0,256};
+    float vRanges[] = {0,256};
+    const float* ranges[] = {hRanges,sRanges,vRanges};
     std::vector<unsigned int> colorHistogram;
-    colorHistogram.resize(6); // 6 colors
+    colorHistogram.resize(NUM_COLORS, 0);
     width = imgIn.size().width;
     height = imgIn.size().height;
     seeds = cv::ximgproc::createSuperpixelSEEDS(width, height, imgIn.channels(), num_superpixels, num_levels, prior, num_histogram_bins, double_step);
@@ -283,14 +287,38 @@ FEATURE_T PlaceRecognition::extractFeatures(cv::Mat imgIn)
         cv::inRange(labels, cv::Scalar(i), cv::Scalar(i), singleSuperpixelBinaryFrame);
         superpixelMoment = cv::moments(singleSuperpixelBinaryFrame, true);
         superpixelCenter = cv::Point2d(superpixelMoment.m10/superpixelMoment.m00, superpixelMoment.m01/superpixelMoment.m00);
-        cv::calcHist(&converted, 1, &channels, singleSuperpixelBinaryFrame, histogram, 1, &histSize, ranges, true, false);
+        cv::calcHist(&converted, 1, channels, singleSuperpixelBinaryFrame, histogram, 3, histSize, ranges, true, false);
         cv::normalize(histogram, histogram, 0, 1, cv::NORM_MINMAX, -1, cv::Mat());
-        colorHistogram.at(0) = histogram.at<unsigned long>(0) + histogram.at<unsigned long>(11); // red
-        colorHistogram.at(1) = histogram.at<unsigned long>(1) + histogram.at<unsigned long>(2); // orange
-        colorHistogram.at(2) = histogram.at<unsigned long>(3) + histogram.at<unsigned long>(4); // yellow
-        colorHistogram.at(3) = histogram.at<unsigned long>(5) + histogram.at<unsigned long>(6); // green
-        colorHistogram.at(4) = histogram.at<unsigned long>(7) + histogram.at<unsigned long>(8); // blue
-        colorHistogram.at(5) = histogram.at<unsigned long>(9) + histogram.at<unsigned long>(10); // purple
+        colorHistogram.resize(NUM_COLORS, 0);
+        for(unsigned int m=0; m<histSize[1]; m++) // HSV saturation loop, looking for white
+        {
+            for(unsigned int n=0; n<histSize[2]; n++) // HSV value loop, looking for black
+            {
+                if(n<valueBlackThresh)
+                {
+                    for(unsigned int k=0; k<NUM_COLORS; k++)
+                    {
+                        colorHistogram.at(7) += histogram.at<unsigned long>(k,m,n); // black
+                    }
+                }
+                else if(m<saturationWhiteThresh)
+                {
+                    for(unsigned int k=0; k<NUM_COLORS; k++)
+                    {
+                        colorHistogram.at(6) += histogram.at<unsigned long>(k,m,n); // white
+                    }
+                }
+                else
+                {
+                    colorHistogram.at(0) += histogram.at<unsigned long>(0,m,n) + histogram.at<unsigned long>(11,m,n); // red
+                    colorHistogram.at(1) += histogram.at<unsigned long>(1,m,n) + histogram.at<unsigned long>(2,m,n); // orange
+                    colorHistogram.at(2) += histogram.at<unsigned long>(3,m,n) + histogram.at<unsigned long>(4,m,n); // yellow
+                    colorHistogram.at(3) += histogram.at<unsigned long>(5,m,n) + histogram.at<unsigned long>(6,m,n); // green
+                    colorHistogram.at(4) += histogram.at<unsigned long>(7,m,n) + histogram.at<unsigned long>(8,m,n); // blue
+                    colorHistogram.at(5) += histogram.at<unsigned long>(9,m,n) + histogram.at<unsigned long>(10,m,n); // purple
+                }
+            }
+        }
         unsigned long maxColorCount = 0;
         unsigned int maxColorIndex = 0;
         for(unsigned int j=0; j<colorHistogram.size(); j++)
@@ -359,13 +387,12 @@ FEATURE_DISTANCE_T PlaceRecognition::computeFeatureDistance(FEATURE_T testFeatur
             return 0;
         }
     };
-    const unsigned int numColors = 6;
     const unsigned int numRelPositions = 9;
     unsigned int numSuperpixels = refFeatures.superpixelColors.size();
     unsigned int bestBaseSuperpixelIndex = 0;
     double bestBaseSuperpixelDistance = std::numeric_limits<double>::infinity();
     double candidateDistance;
-    unsigned int refSemanticHistogram[numColors][numRelPositions] = {0}; // colors, relative positions
+    unsigned int refSemanticHistogram[NUM_COLORS][numRelPositions] = {0}; // colors, relative positions
     // Ref image features
     for(unsigned int i=0; i<numSuperpixels; i++)
     {
@@ -375,7 +402,7 @@ FEATURE_DISTANCE_T PlaceRecognition::computeFeatureDistance(FEATURE_T testFeatur
     // Test image features
     for(unsigned int j=0; j<numSuperpixels; j++)
     {
-        unsigned int testSemanticHistogram[numColors][numRelPositions] = {0}; // colors, relative positions
+        unsigned int testSemanticHistogram[NUM_COLORS][numRelPositions] = {0}; // colors, relative positions
         for(unsigned int i=0; i<numSuperpixels; i++)
         {
             testSemanticHistogram[testFeatures.superpixelColors.at(i)]
@@ -386,7 +413,7 @@ FEATURE_DISTANCE_T PlaceRecognition::computeFeatureDistance(FEATURE_T testFeatur
         if(testFeatures.superpixelColors.at(j) == refFeatures.superpixelColors.at(0)) // TODO: reconsider this condition
         {
             superpixelDistance = 0.0;
-            for(unsigned int m=0; m<numColors; m++)
+            for(unsigned int m=0; m<NUM_COLORS; m++)
             {
                 for(unsigned int n=0; n<numRelPositions; n++)
                 {
