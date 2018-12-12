@@ -52,12 +52,12 @@ void PlaceRecognition::run(int argc, char **argv)
         testImgs.push_back(img);
         //usleep(500000);
         printf("testImage %u: ",j);
-        for(unsigned int k=0; k<testImageData.at(j).superpixelColors.size(); k++)
+        /*for(unsigned int k=0; k<testImageData.at(j).superpixelColors.size(); k++)
         {
             printf("%u ",testImageData.at(j).superpixelColors.at(k)); // color
             //printf("[%.2f,%.2f] ",testImageData.at(j).superpixelCenters.at(k).x,testImageData.at(j).superpixelCenters.at(k).y);
         }
-        printf("\n");
+        printf("\n");*/
     }
 
     // Compute distance between features in test images and all reference images and record minimum distance for each class
@@ -89,7 +89,7 @@ void PlaceRecognition::run(int argc, char **argv)
         //printf("image %u, ",k);
         for(unsigned int i=0; i<numClasses; i++)
         {
-            //printf("minDistance(%u)(%u) = %lf\n",k,i,minDistance.at(k).at(i));
+            printf("minDistance(%u)(%u) = %lf\n",k,i,minDistance.at(k).at(i));
             conditionalProbs.at(k).at(i) = computeConditionalProb(minDistance.at(k).at(i));
             //posteriorProbs.at(k).at(i) = computeConditionalProb(minDistance.at(k).at(i))*priorProbs.at(k).at(i);
             //printf("place %u prob = %lf\t",i,posteriorProbs.at(k).at(i));
@@ -97,7 +97,8 @@ void PlaceRecognition::run(int argc, char **argv)
         //printf("\n");
     }
 
-    // Generate prior probabilities for plotting ROC curves
+#ifdef VARY_PRIORS
+    // Generate varying prior probabilities for plotting ROC curves
     unsigned int individualPriorNumIncrements = (unsigned int)(1.0/PRIOR_PROB_INCREMENT);
     unsigned int numPriorTrials = (unsigned int)pow(individualPriorNumIncrements, numClasses-1);
     priorProbs.resize(numPriorTrials, std::vector<double>(numClasses));
@@ -111,6 +112,14 @@ void PlaceRecognition::run(int argc, char **argv)
             priorProbs.at(trialIndex).at(2) = 1.0 - priorProbs.at(trialIndex).at(1) - priorProbs.at(trialIndex).at(0);
         }
     }
+#else
+    // Uniform priors
+    unsigned int numPriorTrials = 1;
+    priorProbs.resize(numPriorTrials, std::vector<double>(numClasses));
+    priorProbs.at(0).at(0) = 1.0/numClasses;
+    priorProbs.at(0).at(1) = 1.0/numClasses;
+    priorProbs.at(0).at(2) = 1.0/numClasses;
+#endif // VARY_PRIORS
 
     // Compute posterior probabilities
     posteriorProbs.resize(testImageData.size(),std::vector<std::vector<double>>(numPriorTrials,std::vector<double>(numClasses,0)));
